@@ -50,7 +50,6 @@ struct dnsbl_session {
 
 static char **blacklists = NULL;
 static size_t nblacklists = 0;
-static int anon = 0;
 static int markspam = 0;
 static int permanent = 0;
 static int verbose = 0;
@@ -71,11 +70,8 @@ main(int argc, char *argv[])
 	int ch;
 	size_t i;
 
-	while ((ch = getopt(argc, argv, "ampv")) != -1) {
+	while ((ch = getopt(argc, argv, "mpv")) != -1) {
 		switch (ch) {
-		case 'a':
-			anon = 1;
-			break;
 		case 'm':
 			markspam = 1;
 			break;
@@ -119,6 +115,7 @@ dnsbl_connect(struct osmtpd_ctx *ctx, const char *hostname,
 	struct dnsbl_session *session = ctx->local_session;
 	struct asr_query *aq;
 	char query[255];
+	char *rbl;
 	u_char *addr;
 	size_t i;
 
@@ -127,10 +124,13 @@ dnsbl_connect(struct osmtpd_ctx *ctx, const char *hostname,
 	else
 		addr = (u_char *)(&(((struct sockaddr_in6 *)ss)->sin6_addr));
 	for (i = 0; i < nblacklists; i++) {
+		/* Check if blacklist is prepended by a column and remove if needed */
+		if ((rbl = strchr(blacklists[i], ':')))
+			rbl = blacklists[i]+1;
 		if (ss->ss_family == AF_INET) {
 			if (snprintf(query, sizeof(query), "%u.%u.%u.%u.%s",
 			    addr[3], addr[2], addr[1], addr[0],
-			    blacklists[i]) >= (int) sizeof(query))
+			    rbl) >= (int) sizeof(query))
 				osmtpd_errx(1,
 				    "Can't create query, domain too long");
 		} else if (ss->ss_family == AF_INET6) {
@@ -154,7 +154,7 @@ dnsbl_connect(struct osmtpd_ctx *ctx, const char *hostname,
 			    (u_char) (addr[2] & 0xf), (u_char) (addr[2] >> 4),
 			    (u_char) (addr[1] & 0xf), (u_char) (addr[1] >> 4),
 			    (u_char) (addr[0] & 0xf), (u_char) (addr[0] >> 4),
-			    blacklists[i]) >= (int) sizeof(query))
+			    rbl) >= (int) sizeof(query))
 				osmtpd_errx(1,
 				    "Can't create query, domain too long");
 		} else
@@ -174,26 +174,27 @@ dnsbl_resolve(struct asr_result *result, void *arg)
 {
 	struct dnsbl_query *query = arg;
 	struct dnsbl_session *session = query->session;
+	char *rbl;
 	size_t i;
 
 	query->running = 0;
 	query->event = NULL;
+
+	/* strip key if blacklist prepended by column */
+	if ((rbl = strchr(blacklists[query->blacklist], ':'))) {
+		rbl = strchr(blacklists[query->blacklist], '.')+1;
+		
+	} else {
+		rbl = blacklists[query->blacklist];
+	}
 	if (result->ar_hostent != NULL) {
 		if (!markspam) {
-			if (anon) {
-				if (permanent) {
-					osmtpd_filter_reject(session->ctx, permanent, "Blacklisted");
-				} else {
-					osmtpd_filter_disconnect(session->ctx, "Blacklisted");
-				}
+			if (permanent) {
+				osmtpd_filter_reject(session->ctx, permanent, "Listed at %s",
+				    rbl);
 			} else {
-				if (permanent) {
-					osmtpd_filter_reject(session->ctx, permanent, "Listed at %s",
-					    blacklists[query->blacklist]);
-				} else {
-					osmtpd_filter_disconnect(session->ctx, "Listed at %s",
-					    blacklists[query->blacklist]);
-				}
+				osmtpd_filter_disconnect(session->ctx, "Listed at %s",
+				    rbl);
 			}
 			fprintf(stderr, "%016"PRIx64" listed at %s: rejected\n",
 			    session->ctx->reqid, blacklists[query->blacklist]);
@@ -206,8 +207,7 @@ dnsbl_resolve(struct asr_result *result, void *arg)
 		return;
 	}
 	if (result->ar_h_errno != HOST_NOT_FOUND) {
-		osmtpd_filter_disconnect(session->ctx, "DNS error on %s",
-		    blacklists[query->blacklist]);
+		osmtpd_filter_disconnect(session->ctx, "DNS error on %s", rbl);
 		dnsbl_session_query_done(session);
 		return;
 	}

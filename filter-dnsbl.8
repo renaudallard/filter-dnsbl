@@ -39,12 +39,19 @@ For more verbose logging the
 .Fl v
 flag can be used.
 If the
-.Fl a
-flag is specified, the list in which the IP is listed won't appear in the
-rejection message. This is mostly useful when the query contains a key.
-If the
 .Fl p
 flag is specified, the message will be permanently rejected with a 550 error
 code.
+.Pp
+If you use paid blacklists, you might want to avoid your key being leaked in
+the response to foreign MTAs. You can prepend the character 
+.Ic  : 
+to the name of the list to avoid the first part (key) to be leaked.
+For example
+.Ic :abcde1234567890.myblacklist.tld
+will become
+.Ic myblacklist.tld
+in the MTA response. Note that the verbose log will still show the original
+list.
 .Sh SEE ALSO
 .Xr smtpd 8
