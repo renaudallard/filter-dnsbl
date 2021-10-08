@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Martijn van Duren <martijn@openbsd.org>
+ * Copyright (c) 2021 Renaud Allard <renaud@allard.it>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -180,7 +181,7 @@ dnsbl_resolve(struct asr_result *result, void *arg)
 	query->running = 0;
 	query->event = NULL;
 
-	/* strip key if blacklist prepended by column */
+	/* strip key if blacklist is prepended by column */
 	if ((rbl = strchr(blacklists[query->blacklist], ':'))) {
 		rbl = strchr(blacklists[query->blacklist], '.')+1;
 		
